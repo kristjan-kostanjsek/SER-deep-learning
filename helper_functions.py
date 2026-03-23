@@ -42,9 +42,7 @@ class CremaDataset(Dataset):
         spec = np.load(file_path)
         spec = np.nan_to_num(spec, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # =========================
         # AUGMENTATION (SpecAugment)
-        # =========================
         if self.use_augmentation and self.is_train:
             n_mels, n_steps = spec.shape
 
@@ -64,9 +62,7 @@ class CremaDataset(Dataset):
         spec = np.expand_dims(spec, axis=0)
         spec_tensor = torch.tensor(spec, dtype=torch.float32)
 
-        # =========================
         # AUGMENTATION (Noise)
-        # =========================
         if self.use_augmentation and self.is_train and self.add_noise_std > 0:
             noise = torch.randn_like(spec_tensor) * self.add_noise_std
             spec_tensor = spec_tensor + noise
@@ -121,9 +117,7 @@ def build_dataloaders(
     val_files   = [f for f in all_files if os.path.basename(f).split('_')[0] in val_actors]
     test_files  = [f for f in all_files if os.path.basename(f).split('_')[0] in test_actors]
 
-    # =========================
     # DATASETS
-    # =========================
     train_dataset = CremaDataset(
         train_files,
         is_train=True,
@@ -151,9 +145,7 @@ def build_dataloaders(
         time_mask_param=time_mask_param
     )
 
-    # =========================
     # LOADERS
-    # =========================
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader   = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
