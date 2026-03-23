@@ -11,18 +11,6 @@ import matplotlib.pyplot as plt
 # Emotion mapping
 EMOTIONS = {'ANG': 0, 'DIS': 1, 'FEA': 2, 'HAP': 3, 'NEU': 4, 'SAD': 5}
 
-# TODO REMOVE hyperparameters
-
-# Data Augmentation: Standard deviation of Gaussian noise added to spectrograms.
-# Try ranges: 0.001 (very subtle) to 0.01 (noticeable static)
-ADD_NOISE_STD = 0.005
-
-# SpecAugment Masking: Max number of bins to randomly blackout.
-# Try ranges: Freq (10-30), Time (20-50)
-FREQ_MASK_PARAM = 10 #15
-TIME_MASK_PARAM = 20 #30
-
-
 # ==========================================
 # DATASET
 # ==========================================
@@ -332,14 +320,25 @@ def train_model(
 def plot_history(history, title="Training vs Validation"):
     import matplotlib.pyplot as plt
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(history["train_acc"], label="Train Acc")
-    plt.plot(history["val_acc"], label="Val Acc")
+    epochs = range(1, len(history["train_acc"]) + 1)
 
-    plt.xlabel("Epochs")
-    plt.ylabel("Accuracy (%)")
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+
+    ax1.plot(epochs, history["train_acc"], label="Train Acc")
+    ax1.plot(epochs, history["val_acc"], label="Val Acc")
+    ax1.set_xlabel("Epochs")
+    ax1.set_ylabel("Accuracy (%)")
+    ax1.legend(loc="upper left")
+
+    # Optional: Plot learning rate on secondary y-axis
+    if "lr" in history and len(history["lr"]) > 0 and len(set(history["lr"])) > 1:
+        print(history["lr"])
+        ax2 = ax1.twinx()
+        ax2.step(epochs, history["lr"], linestyle="--")
+        ax2.set_ylabel("Learning Rate")
+        ax2.set_yscale("log")
+
     plt.title(title)
-    plt.legend()
     plt.grid(True)
     plt.show()
 
