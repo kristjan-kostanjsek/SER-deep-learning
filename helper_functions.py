@@ -355,3 +355,50 @@ def evaluate_model(model, test_loader, device="cuda"):
     print(f"\nFinal Test Accuracy: {acc:.2f}%")
 
     return acc
+
+# ==========================================
+# VISUALIZE AUGMENTATION
+# ==========================================
+def visualize_augmentation(file_path, noise_std=0.005, freq_mask=10, time_mask=20):
+    """
+    Loads a single spectrogram and displays original vs augmented versions.
+    """
+    # Load and clean
+    spec = np.load(file_path)
+    spec = np.nan_to_num(spec, nan=0.0, posinf=0.0, neginf=0.0)
+    
+    orig_spec = spec.copy()
+    aug_spec = spec.copy()
+    
+    n_mels, n_steps = aug_spec.shape
+    
+    # Frequency and time masking
+    if freq_mask > 0 and n_mels > freq_mask:
+        f_mask = np.random.randint(1, freq_mask)
+        f0 = np.random.randint(0, n_mels - f_mask)
+        aug_spec[f0:f0 + f_mask, :] = 0
+        
+    if time_mask > 0 and n_steps > time_mask:
+        t_mask = np.random.randint(1, time_mask)
+        t0 = np.random.randint(0, n_steps - t_mask)
+        aug_spec[:, t0:t0 + t_mask] = 0
+
+    # Add noise
+    aug_tensor = torch.tensor(aug_spec, dtype=torch.float32).unsqueeze(0)
+    if noise_std > 0:
+        noise = torch.randn_like(aug_tensor) * noise_std
+        aug_tensor = aug_tensor + noise
+    
+    # Plotting
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+    
+    img1 = axes[0].imshow(orig_spec, aspect='auto', origin='lower')
+    axes[0].set_title("Original Spectrogram")
+    fig.colorbar(img1, ax=axes[0])
+    
+    img2 = axes[1].imshow(aug_tensor.squeeze().numpy(), aspect='auto', origin='lower')
+    axes[1].set_title(f"Augmented (Noise={noise_std}, F={freq_mask}, T={time_mask})")
+    fig.colorbar(img2, ax=axes[1])
+    
+    plt.tight_layout()
+    plt.show()
