@@ -62,6 +62,19 @@ class CremaDataset(Dataset):
         spec = np.expand_dims(spec, axis=0)
         spec_tensor = torch.tensor(spec, dtype=torch.float32)
 
+        # ✅ RESIZE (FOR DINO / ViT)
+        import torch.nn.functional as F
+
+        spec_tensor = F.interpolate(
+            spec_tensor.unsqueeze(0),   # (1, C, H, W)
+            size=(224, 224),
+            mode='bilinear',
+            align_corners=False
+        ).squeeze(0)  # back to (C, H, W)
+
+        # ✅ NORMALIZATION (IMPORTANT for DINO)
+        spec_tensor = (spec_tensor - 0.5) / 0.5
+
         # AUGMENTATION (Noise)
         if self.use_augmentation and self.is_train and self.add_noise_std > 0:
             noise = torch.randn_like(spec_tensor) * self.add_noise_std
@@ -169,7 +182,8 @@ def build_model(
     use_scheduler=False,
     scheduler_factor=0.5,
     scheduler_patience=2,
-    device="cuda"
+    device="cuda",
+    dinov2_freeze_backbone=True
 ):
     import torch.nn as nn
     import torch.optim as optim
@@ -205,6 +219,52 @@ def build_model(
             )
         else:
             model.classifier[2] = nn.Linear(num_ftrs, num_classes)
+    
+    elif model_name == "dinov2":
+        # Load pretrained DINOv2 model
+        model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14', pretrained=pretrained)
+
+        if (dinov2_freeze_backbone):
+            # Freeze backbone 
+            for param in model.parameters():
+                param.requires_grad = False
+        else:
+            # Finetune last transformer block + head (instead of just head)
+            for name, param in model.named_parameters():
+                if "blocks.11" in name:  # unfreeze last transformer block
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+
+        # Get embedding dimension
+        embed_dim = model.embed_dim
+
+        # Replace with custom classifier
+        if use_regularization:
+            head = nn.Sequential(
+                nn.Dropout(dropout_rate),
+                nn.Linear(embed_dim, num_classes)
+            )
+        else:
+            head = nn.Linear(embed_dim, num_classes)
+
+        # Wrap model
+        class DinoClassifier(nn.Module):
+            def __init__(self, backbone, head):
+                super().__init__()
+                self.backbone = backbone
+                self.head = head
+
+            def forward(self, x):
+                # Convert 1-channel → 3-channel
+                if x.shape[1] == 1:
+                    x = x.repeat(1, 3, 1, 1)
+
+                features = self.backbone(x)  # shape: (B, embed_dim)
+                out = self.head(features)
+                return out
+            
+        model = DinoClassifier(model, head)
 
     else:
         raise ValueError("Unsupported model")
@@ -320,6 +380,7 @@ def plot_history(history, title="Training vs Validation"):
     ax1.plot(epochs, history["val_acc"], label="Val Acc")
     ax1.set_xlabel("Epochs")
     ax1.set_ylabel("Accuracy (%)")
+    ax1.set_ylim(0, 100)
     ax1.legend(loc="upper left")
 
     # Optional: Plot learning rate on secondary y-axis
