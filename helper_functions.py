@@ -183,7 +183,7 @@ def build_model(
     scheduler_factor=0.5,
     scheduler_patience=2,
     device="cuda",
-    dinov2_freeze_backbone=True
+    dinov2_freeze_backbone="freeze_all" # options: "freeze_all", "freeze_except_last", "freeze_except_last_two", "freeze_except_last_three", "finetune_all"
 ):
     import torch.nn as nn
     import torch.optim as optim
@@ -220,21 +220,45 @@ def build_model(
         else:
             model.classifier[2] = nn.Linear(num_ftrs, num_classes)
     
-    elif model_name == "dinov2":
+    elif model_name == "dinov2" or model_name == "dinov2_small":
         # Load pretrained DINOv2 model
-        model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14', pretrained=pretrained)
+        if model_name == "dinov2":
+            model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14', pretrained=pretrained)
+        else:
+            print("Loading DINOv2 Small...")
+            model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14', pretrained=pretrained)
 
-        if (dinov2_freeze_backbone):
-            # Freeze backbone 
+        if dinov2_freeze_backbone == "freeze_all":
+            # Freeze entire backbone
             for param in model.parameters():
                 param.requires_grad = False
-        else:
-            # Finetune last transformer block + head (instead of just head)
+        elif dinov2_freeze_backbone == "freeze_except_last":
+            # Freeze all but last transformer block + head
             for name, param in model.named_parameters():
                 if "blocks.11" in name:  # unfreeze last transformer block
                     param.requires_grad = True
                 else:
                     param.requires_grad = False
+        elif dinov2_freeze_backbone == "freeze_except_last_two":
+            # Freeze all but last 2 transformer blocks + head
+            for name, param in model.named_parameters():
+                if "blocks.10" in name or "blocks.11" in name:  # unfreeze last 2 transformer blocks
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+        elif dinov2_freeze_backbone == "freeze_except_last_three":
+            # Freeze all but last 3 transformer blocks + head
+            for name, param in model.named_parameters():
+                if "blocks.9" in name or "blocks.10" in name or "blocks.11" in name:  # unfreeze last 3 transformer blocks
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+        elif dinov2_freeze_backbone == "finetune_all":
+            # Finetune entire model (no freezing)
+            for param in model.parameters():
+                param.requires_grad = True
+        else:
+            raise ValueError("Invalid dinov2_freeze_backbone option")
 
         # Get embedding dimension
         embed_dim = model.embed_dim
