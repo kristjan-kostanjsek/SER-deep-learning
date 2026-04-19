@@ -424,8 +424,13 @@ def evaluate_model(model, test_loader, device="cuda"):
     model.eval()
     correct, total = 0, 0
 
+    # Intensity tracking: 0=XX (Unspecified), 1=LO (Low), 2=MD (Medium), 3=HI (High)
+    intensity_labels = {0: "Unspecified", 1: "Low", 2: "Medium", 3: "High"}
+    intensity_correct = {k: 0 for k in intensity_labels}
+    intensity_total   = {k: 0 for k in intensity_labels}
+
     with torch.no_grad():
-        for x, y, _ in test_loader:
+        for x, y, y_intensity in test_loader:
             x, y = x.to(device), y.to(device)
             cls_out, _ = model(x)
 
@@ -433,8 +438,24 @@ def evaluate_model(model, test_loader, device="cuda"):
             total += y.size(0)
             correct += pred.eq(y).sum().item()
 
+            # Per-intensity accuracy
+            pred_cpu = pred.cpu()
+            y_cpu    = y.cpu()
+
+            for i in range(len(y_intensity)):
+                intensity_key = int(round(y_intensity[i].item()))
+                intensity_total[intensity_key]   += 1
+                intensity_correct[intensity_key] += int(pred_cpu[i].eq(y_cpu[i]).item())
+
     acc = 100 * correct / total
     print(f"\nFinal Test Accuracy: {acc:.2f}%")
+    print("\nAccuracy by Intensity:")
+    for key, label in intensity_labels.items():
+        if intensity_total[key] > 0:
+            intensity_acc = 100 * intensity_correct[key] / intensity_total[key]
+            print(f"  {label:>12s}: {intensity_acc:.2f}%  ({intensity_correct[key]}/{intensity_total[key]} correct)")
+        else:
+            print(f"  {label:>12s}: N/A (no samples)")
 
     return acc
 
@@ -484,3 +505,51 @@ def visualize_augmentation(file_path, noise_std=0.005, freq_mask=10, time_mask=2
     
     plt.tight_layout()
     plt.show()
+
+# ==========================================
+# PLOT CONFUSION MATRIX
+# ==========================================
+def plot_confusion_matrix(model, test_loader, device="cuda"):
+    emotion_labels = ["Anger", "Disgust", "Fear", "Happy", "Neutral", "Sad"]
+    num_classes = len(emotion_labels)
+    confusion = np.zeros((num_classes, num_classes), dtype=int)
+
+    model.eval()
+    with torch.no_grad():
+        for x, y, _ in test_loader:
+            x, y = x.to(device), y.to(device)
+            cls_out, _ = model(x)
+            _, pred = cls_out.max(1)
+
+            for true, p in zip(y.cpu().numpy(), pred.cpu().numpy()):
+                confusion[true, p] += 1  # rows = intended, cols = predicted
+
+    # Normalize rows to sum to 1
+    row_sums = confusion.sum(axis=1, keepdims=True)
+    confusion_norm = np.where(row_sums > 0, confusion / row_sums, 0.0)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(8, 7))
+    im = ax.imshow(confusion_norm, interpolation="nearest", cmap="Blues", vmin=0, vmax=1)
+    plt.colorbar(im, ax=ax)
+
+    ax.set_xticks(range(num_classes))
+    ax.set_yticks(range(num_classes))
+    ax.set_xticklabels(emotion_labels, rotation=45, ha="right")
+    ax.set_yticklabels(emotion_labels)
+    ax.set_xlabel("Predicted Emotion")
+    ax.set_ylabel("Intended Emotion (True Label)")
+    ax.set_title("Confusion Matrix")
+
+    # Annotate cells
+    for i in range(num_classes):
+        for j in range(num_classes):
+            val = confusion_norm[i, j]
+            ax.text(j, i, f"{val:.2f}",
+                    ha="center", va="center",
+                    color="white" if val > 0.5 else "black")
+
+    plt.tight_layout()
+    plt.show()
+
+    return confusion_norm

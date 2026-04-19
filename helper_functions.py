@@ -424,11 +424,17 @@ def plot_history(history, title="Training vs Validation"):
 # EVALUATE MODEL
 # ==========================================
 def evaluate_model(model, test_loader, device="cuda"):
+    INTENSITIES = {'XX': 0, 'LO': 1, 'MD': 2, 'HI': 3}
+    intensity_labels = {0: "Unspecified", 1: "Low", 2: "Medium", 3: "High"}
+
+    intensity_correct = {k: 0 for k in intensity_labels}
+    intensity_total   = {k: 0 for k in intensity_labels}
+
     model.eval()
     correct, total = 0, 0
 
     with torch.no_grad():
-        for x, y in test_loader:
+        for batch_idx, (x, y) in enumerate(test_loader):
             x, y = x.to(device), y.to(device)
             out = model(x)
 
@@ -436,8 +442,31 @@ def evaluate_model(model, test_loader, device="cuda"):
             total += y.size(0)
             correct += pred.eq(y).sum().item()
 
+            # Recover file paths for this batch from the dataset
+            batch_size = x.size(0)
+            start_idx = batch_idx * test_loader.batch_size
+            file_paths = test_loader.dataset.file_paths[start_idx : start_idx + batch_size]
+
+            pred_cpu = pred.cpu()
+            y_cpu    = y.cpu()
+
+            for i, file_path in enumerate(file_paths):
+                filename = os.path.basename(file_path)
+                intensity_code = filename.split('_')[3].split('.')[0]
+                intensity_key = INTENSITIES[intensity_code]
+
+                intensity_total[intensity_key]   += 1
+                intensity_correct[intensity_key] += int(pred_cpu[i].eq(y_cpu[i]).item())
+
     acc = 100 * correct / total
     print(f"\nFinal Test Accuracy: {acc:.2f}%")
+    print("\nAccuracy by Intensity:")
+    for key, label in intensity_labels.items():
+        if intensity_total[key] > 0:
+            intensity_acc = 100 * intensity_correct[key] / intensity_total[key]
+            print(f"  {label:>12s}: {intensity_acc:.2f}%  ({intensity_correct[key]}/{intensity_total[key]} correct)")
+        else:
+            print(f"  {label:>12s}: N/A (no samples)")
 
     return acc
 
